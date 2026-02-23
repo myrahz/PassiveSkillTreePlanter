@@ -103,6 +103,7 @@ public abstract class BaseUrlImporter
 
                         var tree = new TreeConfig.Tree
                         {
+											   
                             Tag = validTreeName ? $"{data[_selectedVariant].Name}, {_selectedProgress} pts"
                                 : $"{Name} import ({data[_selectedVariant].Url}), {_selectedProgress} pts",
                             SkillTreeUrl = PathOfExileUrlDecoder.Encode(

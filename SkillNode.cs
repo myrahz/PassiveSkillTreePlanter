@@ -20,6 +20,7 @@ public class SkillNode
     //Cached for drawing
     public float DrawSize = 100;
     public ushort Id; // "id": -28194677,
+    public string AscendancyName; 
     public List<ushort> linkedNodes = new List<ushort>();
     public string Name; //"dn": "Block Recovery",
     public int Orbit; //  "o": 1,

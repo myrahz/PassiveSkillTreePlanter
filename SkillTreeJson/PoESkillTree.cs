@@ -43,6 +43,8 @@ public class FlavourTextRect
 
 public class Constants
 {
+    public Classes Classes { get; set; }
+    public CharacterAttributes CharacterAttributes { get; set; }
     public long PssCentreInnerRadius { get; set; }
     public List<int> SkillsPerOrbit { get; set; }
     public List<int> OrbitRadii { get; set; }
@@ -115,4 +117,4 @@ public class ExpansionJewel
     public long Parent { get; set; }
 }
 
-public enum Recipe { AmberOil, AzureOil, BlackOil, ClearOil, CrimsonOil, GoldenOil, IndigoOil, OpalescentOil, SepiaOil, SilverOil, TealOil, VerdantOil, VioletOil, PrismaticOil, };
+public enum Recipe { AmberOil, AzureOil, BlackOil, ClearOil, CrimsonOil, GoldenOil, IndigoOil, OpalescentOil, SepiaOil, SilverOil, TealOil, VerdantOil, VioletOil };

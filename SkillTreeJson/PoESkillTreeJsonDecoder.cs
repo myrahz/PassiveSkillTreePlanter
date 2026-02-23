@@ -41,6 +41,7 @@ public class PoESkillTreeJsonDecoder
             var skillNode = new SkillNode
             {
                 Id = (ushort)nd.Value.Skill,
+                AscendancyName = nd.Value.AscendancyName,
                 Name = nd.Value.Name,
                 Orbit = nd.Value.Orbit,
                 OrbitIndex = nd.Value.OrbitIndex,
