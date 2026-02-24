@@ -61,7 +61,11 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
     45272, 38129,
 
     // RANGER
-    45035, 39821
+    45035, 39821,
+
+    
+    // ATLAS STARTER
+    63311, 42692 , 64048, 55117, 44775
 };
     //List of nodes decoded from URL
     private HashSet<ushort> _characterUrlNodeIds = new HashSet<ushort>();
@@ -247,6 +251,7 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
             else
             {
                 LogMessage("Auto choose passive stopped", 5, Color.Yellow);
+                Input.KeyUp(Keys.LControlKey);
                 _cancellationTokenSource?.Cancel();
                 _cancellationTokenSource?.Dispose();
                 _choosePassiveTask = null;
@@ -307,7 +312,10 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
 
         foreach (var id in missingNodes)
         {
-            if (id == 0)
+            if (id == 0) /// character node default or smth
+                continue;
+
+            if (id == 29045) /// atlas node default or smth
                 continue;
 
             if (!treeData.SkillNodes.TryGetValue(id, out var node) || node == null)
@@ -1170,76 +1178,6 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
         return false;
     }
 
-    private async SyncTask<bool> CtrlClickHighlightedNode()
-    {
-        var originalMousePos = Input.MousePositionNum;
-        LogMessage("Entered the synctask");
-        try
-        {
-            var ingameUi = GameController?.Game?.IngameState?.IngameUi;
-            if (ingameUi == null)
-                return false;
-
-            var passivePanel = ingameUi.TreePanel?.AsObject<TreePanel>();
-            var atlasPanel = ingameUi.AtlasTreePanel?.AsObject<TreePanel>();
-
-            TreePanel panel = null;
-            ushort nodeId = 0;
-
-            // Prefer whichever panel is visible
-            if (atlasPanel != null && atlasPanel.IsVisible)
-            {
-                panel = atlasPanel;
-                nodeId = _highlightedNextAtlasNodeId;
-            }
-            else if (passivePanel != null && passivePanel.IsVisible)
-            {
-                panel = passivePanel;
-                nodeId = _highlightedNextCharacterNodeId;
-            }
-
-            if (panel == null || nodeId == 0)
-                return false;
-
-            var passivesById = panel.Passives
-                .Where(p => p?.PassiveSkill != null)
-                .GroupBy(p => (ushort)p.PassiveSkill.PassiveId)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            if (!passivesById.TryGetValue(nodeId, out var nodeElem) || nodeElem == null)
-                return false;
-
-            // IMPORTANT: this is client-relative; InputHandler adds window offset internally
-            LogMessage("Went for the click the synctask");
-            var clickPos = nodeElem.GetClientRectCache.Center.ToVector2Num();
-            Input.KeyDown(Keys.LControlKey);
-            await Task.Delay(Settings.InputDelay);
-            //await SetCursorPosAndLeftClick(clickPos, Settings.InputDelay);
-            await SetCursorPosAndLeftClick(new Vector2(677,312), Settings.InputDelay);
-            await Task.Delay(Settings.InputDelay);
-            Input.KeyUp(Keys.LControlKey);
-
-            /*
-            try
-            {
-
-                await _inputHandler.MoveCursorAndControlClick(clickPos, CancellationToken.None);
-            }
-            finally
-            {
-                // always restore for this run
-                Input.SetCursorPos(originalMousePos);
-            }
-
-            */
-            return true;
-        }
-        catch
-        {
-            
-            return false;
-        }
-    }
     private async SyncTask<bool> RunAutoPassiveTask(CancellationToken token)
     {
         LogMessage("Entered the Autopassive task");
