@@ -1,4 +1,19 @@
-﻿using System;
+﻿using ExileCore;
+using ExileCore.PoEMemory.Components;
+using ExileCore.PoEMemory.Elements;
+using ExileCore.PoEMemory.MemoryObjects;
+using ExileCore.Shared;
+using ExileCore.Shared.AtlasHelper;
+using ExileCore.Shared.Enums;
+using ExileCore.Shared.Helpers;
+using GameOffsets;
+using ImGuiNET;
+using PassiveSkillTreePlanter.SkillTreeJson;
+using PassiveSkillTreePlanter.TreeGraph;
+using PassiveSkillTreePlanter.UrlDecoders;
+using PassiveSkillTreePlanter.UrlImporters;
+using SharpDX;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -7,19 +22,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml.Linq;
-using ExileCore;
-using ExileCore.PoEMemory.Elements;
-using ExileCore.PoEMemory.Components;
-using ExileCore.Shared;
-using ExileCore.Shared.AtlasHelper;
-using ExileCore.Shared.Enums;
-using ExileCore.Shared.Helpers;
-using ImGuiNET;
-using PassiveSkillTreePlanter.SkillTreeJson;
-using PassiveSkillTreePlanter.TreeGraph;
-using PassiveSkillTreePlanter.UrlDecoders;
-using PassiveSkillTreePlanter.UrlImporters;
-using SharpDX;
 using Vector2 = System.Numerics.Vector2;
 
 namespace PassiveSkillTreePlanter;
@@ -248,14 +250,14 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
                 LogMessage("Auto choose passive started", 5, Color.LimeGreen);
                 _cancellationTokenSource = new CancellationTokenSource();
             }
-            else
-            {
-                LogMessage("Auto choose passive stopped", 5, Color.Yellow);
-                Input.KeyUp(Keys.LControlKey);
-                _cancellationTokenSource?.Cancel();
-                _cancellationTokenSource?.Dispose();
-                _choosePassiveTask = null;
-            }
+            //else
+            //{
+            //    LogMessage("Auto choose passive stopped", 5, Color.Yellow);
+            //    Input.KeyUp(Keys.LControlKey);
+            //    _cancellationTokenSource?.Cancel();
+            //    _cancellationTokenSource?.Dispose();
+            //    _choosePassiveTask = null;
+            //}
         }
         if (_isProcessing)
         {
@@ -353,6 +355,10 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
             foreach (var nxt in curNode.linkedNodes)
             {
                 if (!missingNodes.Contains(nxt)) continue;
+
+                // Don't traverse outward FROM a mastery node
+                if (curNode.bMastery) continue;
+
                 if (seen.Add(nxt))
                     q.Enqueue((nxt, dist + 1));
             }
@@ -375,7 +381,13 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
                 continue;
 
             // Adjacent to an allocated node?
-            if (node.linkedNodes.Any(allocatedNodeIds.Contains))
+            bool adjacentToNonMasteryAllocated = node.linkedNodes.Any(linkedId =>
+                allocatedNodeIds.Contains(linkedId) &&
+                treeData.SkillNodes.TryGetValue(linkedId, out var linkedNode) &&
+                !linkedNode.bMastery
+            );
+
+            if (adjacentToNonMasteryAllocated)
                 frontier.Add(id);
         }
 
@@ -1184,10 +1196,57 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
         try
         {
             var originalMousePos = Input.MousePositionNum;
-
-            var ingameUi = GameController?.Game?.IngameState?.IngameUi;
+            var ingameState = GameController?.Game?.IngameState;
+            var ingameUi = ingameState?.IngameUi;
             if (ingameUi == null)
                 return false;
+            var gameUI = ingameUi.GameUI;
+            var varPassivesButton = gameUI.UnusedPassivePointsButton;
+
+            var passives = 0;
+            var type = "Atlas";
+
+            if (varPassivesButton.IsVisible)
+            {
+                var varpassiveschildren = varPassivesButton.Children;
+
+                foreach (var v in varpassiveschildren)
+                {
+                    var tooltip = v.Tooltip;
+
+                    if (tooltip == null || string.IsNullOrEmpty(tooltip.Text))
+                        continue;
+
+                    var text = tooltip.Text.Trim();
+
+                    if (text.Contains("Atlas Passive Skill Point")) // e.g. "3 Atlas Passive Skill Points available"
+                    {
+                        var firstWord = text.Split(' ')[0];
+
+                        if (int.TryParse(firstWord, out int value))
+                        {
+                            passives = value;
+                            type = "Atlas";
+                            break;
+                        }
+                    }
+                    else if (text.Contains("Passive Skill Point")) // e.g. "1 Passive Skill Point available"
+                    {
+                        var firstWord = text.Split(' ')[0];
+
+                        if (int.TryParse(firstWord, out int value))
+                        {
+                            passives = value;
+                            type = "Character";
+                            break;
+                        }
+                    }
+                }
+            }
+            if(Settings.Debug)
+            LogMessage($"I have {passives} of type {type}");
+
+
 
             var passivePanel = ingameUi.TreePanel?.AsObject<TreePanel>();
             var passivePanelVisible = ingameUi.TreePanel?.IsVisible ?? false;
@@ -1196,7 +1255,78 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
             var atlasPanelVisible = ingameUi.AtlasTreePanel?.IsVisible ?? false;
             TreePanel panel = null;
             ushort nodeId = 0;
+            var shortcut = ingameState.ShortcutSettings.Shortcuts.FirstOrDefault(s => s.Usage == ShortcutUsage.AtlasTree);
+            bool openedTree = false;
+            Keys mainKey = (Keys)shortcut.MainKey;
+            // get the window
 
+            if (type == "Atlas" && passives > 0 && (atlasPanel == null || !atlasPanelVisible))
+            {
+                if (Settings.Debug)
+                    LogMessage("Opening Atlas Passives");
+                shortcut = ingameState.ShortcutSettings.Shortcuts.FirstOrDefault(s => s.Usage == ShortcutUsage.AtlasTree);
+
+
+
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Ctrl))
+                    Input.KeyDown(Keys.LControlKey);
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Shift))
+                    Input.KeyDown(Keys.LShiftKey);
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Alt))
+                    Input.KeyDown(Keys.LMenu);
+
+                // Then press the main key
+                Input.KeyDown(mainKey);
+                await Task.Delay(Settings.InputDelay, token);
+                Input.KeyUp(mainKey);
+
+                // Release modifiers after
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Ctrl))
+                    Input.KeyUp(Keys.LControlKey);
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Shift))
+                    Input.KeyUp(Keys.LShiftKey);
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Alt))
+                    Input.KeyUp(Keys.LMenu);
+
+                atlasPanel = ingameUi.AtlasTreePanel?.AsObject<TreePanel>();
+                atlasPanelVisible = ingameUi.AtlasTreePanel?.IsVisible ?? false;
+
+                openedTree = true;
+            }
+
+            if (type == "Character" && passives > 0 && (passivePanel == null || !passivePanelVisible))
+            {if(Settings.Debug)
+                LogMessage("Opening Character Passives");
+                shortcut = ingameState.ShortcutSettings.Shortcuts.FirstOrDefault(s => s.Usage == ShortcutUsage.SkillTree);
+                mainKey = (Keys)shortcut.MainKey;
+
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Ctrl))
+                    Input.KeyDown(Keys.LControlKey);
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Shift))
+                    Input.KeyDown(Keys.LShiftKey);
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Alt))
+                    Input.KeyDown(Keys.LMenu);
+
+                // Then press the main key
+                Input.KeyDown(mainKey);
+                await Task.Delay(Settings.InputDelay, token);
+                Input.KeyUp(mainKey);
+
+                // Release modifiers after
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Ctrl))
+                    Input.KeyUp(Keys.LControlKey);
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Shift))
+                    Input.KeyUp(Keys.LShiftKey);
+                if (shortcut.Modifier.HasFlag(ShortcutModifier.Alt))
+                    Input.KeyUp(Keys.LMenu);
+
+
+                passivePanel = ingameUi.TreePanel?.AsObject<TreePanel>();
+                passivePanelVisible = ingameUi.TreePanel?.IsVisible ?? false;
+
+                openedTree = true;
+
+            }
 
             // Prefer whichever panel is visible
             if (atlasPanel != null && atlasPanelVisible)
@@ -1212,7 +1342,8 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
 
             if (panel == null || nodeId == 0)
             {
-                LogMessage("All panels hidden");
+                if (Settings.Debug)
+                    LogMessage("All panels hidden");
                 _isProcessing = false;
                 return false;
             }
@@ -1235,12 +1366,35 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
             token.ThrowIfCancellationRequested();
             var clickPos = nodeElem.GetClientRectCache.Center.ToVector2Num();
 
+            var window = GameController?.Window.GetWindowRectangleTimeCache;
+            // if clickpos is outside of window then print smoething and reutrn false
+            var windowRectNullable = GameController?.Window.GetWindowRectangleTimeCache;
+            if (windowRectNullable is not RectangleF windowRect)
+                return false;
+
+            var treeData = type == "Atlas" ? _atlasTreeData : _skillTreeData;
+            bool isClickedNodeMastery = treeData?.SkillNodes.TryGetValue(nodeId, out var clickedNode) == true
+                && clickedNode.bMastery;
+
+
+            if (clickPos.X < windowRect.Left ||
+             clickPos.X > windowRect.Right ||
+             clickPos.Y < windowRect.Top ||
+             clickPos.Y > windowRect.Bottom)
+            {
+                if (Settings.Debug)
+                    LogMessage("Click position is outside the window.");
+                _isProcessing = false;
+                return false;
+            }
             try
             {
-                LogMessage("Entered try");
+
                 Input.KeyDown(Keys.LControlKey);
                 await Task.Delay(Settings.InputDelay, token);
+               
                 await _inputHandler.MoveCursorAndClick(clickPos, token);
+                //LogMessage($"clicking on {clickPos}");
                 await Task.Delay(Settings.InputDelay, token);
 
             }
@@ -1249,6 +1403,21 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
                 Input.KeyUp(Keys.LControlKey);
                 await Task.Delay(Settings.InputDelay, token);
                 Input.SetCursorPos(originalMousePos);
+
+                if (openedTree && !isClickedNodeMastery)
+                {
+                    Input.KeyDown(Keys.Escape);
+                    await Task.Delay(Settings.InputDelay, token);
+
+                    Input.KeyUp(Keys.Escape);
+                    if (shortcut.Modifier.HasFlag(ShortcutModifier.Ctrl))
+                        Input.KeyUp(Keys.LControlKey);
+                    if (shortcut.Modifier.HasFlag(ShortcutModifier.Shift))
+                        Input.KeyUp(Keys.LShiftKey);
+                    if (shortcut.Modifier.HasFlag(ShortcutModifier.Alt))
+                        Input.KeyUp(Keys.LMenu);
+
+                }
                 _isProcessing = false;
 
             }
@@ -1259,7 +1428,8 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
         }
         catch (OperationCanceledException)
         {
-            LogMessage("Autopassive cancelled.", 5, Color.Yellow);
+            if (Settings.Debug)
+                LogMessage("Autopassive cancelled.", 5, Color.Yellow);
             _isProcessing = false;
             return false;
         }
@@ -1335,13 +1505,5 @@ public class PassiveSkillTreePlanter : BaseSettingsPlugin<PassiveSkillTreePlante
 
         LoadUrl(nextUrl);
     }
-    public static async SyncTask<bool> SetCursorPosAndLeftClick(Vector2 coords, int extraDelay)
-    {
-        Input.SetCursorPos(coords);
-        await Task.Delay(10 + extraDelay);
-        Input.LeftDown();
-        await Task.Delay(1);
-        Input.LeftUp();
-        return true;
-    }
+   
 }

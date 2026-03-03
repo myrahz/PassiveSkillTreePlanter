@@ -28,5 +28,6 @@ public class PassiveSkillTreePlanterSettings : ISettings
 
     public ToggleNode ShowControlPanel { get; set; } = new ToggleNode(true);
     public ToggleNode SaveChangesAutomatically { get; set; } = new ToggleNode(true);
+    public ToggleNode Debug { get; set; } = new ToggleNode(false);
     public ToggleNode Enable { get; set; } = new ToggleNode(false);
 }
